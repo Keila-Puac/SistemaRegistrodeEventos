@@ -11,6 +11,8 @@ DB_CONFIG = {
     'port': 3306
 }
 
+def establecer_cotra(contra):
+    DB_CONFIG["password"] = contra
 
 def obtener_conexion():
     """Establece conexión activa con la base de datos remota en Alwaysdata."""
@@ -42,6 +44,26 @@ def obtener_ticket_disponible():
     db.close()
     return ticket
 
+
+def consultar_pagos():
+    """Obtiene el listado completo de pagos registrados."""
+    db = obtener_conexion()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM pagos")
+    pagos = cursor.fetchall()
+    cursor.close()
+    db.close()
+    return pagos
+
+def consultar_aceptados():
+    """Obtiene el listado completo de estudiantes registrados y cuyo pago ya fué procesado."""
+    db = obtener_conexion()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM usuarios_aceptados")
+    estudiantes = cursor.fetchall()
+    cursor.close()
+    db.close()
+    return estudiantes
 
 def vincular_pago_exitoso(carnet, id_pago, id_ticket):
     """
