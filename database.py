@@ -6,7 +6,7 @@ import mysql.connector
 DB_CONFIG = {
     'host': 'mysql-jack-vg.alwaysdata.net',
     'user': 'jack-vg',
-    'password': '',  # se pone al contraseña de la base  de datos, ahi me preguntan la contra x,d
+    'password': 'Wilson2007..',  # se pone al contraseña de la base  de datos, ahi me preguntan la contra x,d
     #no voy a subir eso a esata wea
     'database': 'jack-vg_simposio_db',
     'port': 3306
@@ -51,6 +51,21 @@ TABLAS = {
             FOREIGN KEY (carnet) REFERENCES estudiantes(carnet) ON DELETE CASCADE,
             FOREIGN KEY (id_pago) REFERENCES pagos(id_pago) ON DELETE CASCADE,
             FOREIGN KEY (id_ticket) REFERENCES tickets(id_ticket) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    'pagos_pendientes': """
+        CREATE TABLE IF NOT EXISTS pagos_pendientes (
+            id_pendiente INT AUTO_INCREMENT PRIMARY KEY,
+            id_pago INT NOT NULL,
+            relacionados TEXT,
+            FOREIGN KEY (id_pago) REFERENCES pagos(id_pago) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    'usuarios_aceptados': """
+        CREATE TABLE IF NOT EXISTS usuarios_aceptados (
+            id_aceptado INT AUTO_INCREMENT PRIMARY KEY,
+            carnet VARCHAR(20) NOT NULL,
+            FOREIGN KEY (carnet) REFERENCES estudiantes(carnet) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
 }
