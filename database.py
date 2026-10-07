@@ -6,7 +6,7 @@ import mysql.connector
 DB_CONFIG = {
     'host': 'mysql-jack-vg.alwaysdata.net',
     'user': 'jack-vg',
-    'password': '--',  # se pone al contraseña de la base  de datos, ahi me preguntan la contra x,d
+    'password': '',  # se pone al contraseña de la base  de datos, ahi me preguntan la contra x,d
     #no voy a subir eso a esata wea
     'database': 'jack-vg_simposio_db',
     'port': 3306
@@ -125,9 +125,6 @@ def vincular_pago_exitoso(carnet, id_pago, id_ticket):
     db.commit()
     cursor.close()
     db.close()
-
-
-from datetime import datetime
 
 
 def validar_ingreso_qr(codigo_qr, dia=1):
