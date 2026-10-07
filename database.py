@@ -180,7 +180,7 @@ def validar_ingreso_qr(codigo_qr, dia=1):
     query_update = f"UPDATE validaciones SET {columna_ingreso} = %s WHERE id_validacion = %s"
     cursor.execute(query_update, (fecha_actual, resultado["id_validacion"]))
 
-    # Opcional: Marcar el ticket como UTILIZADO globalmente si ya completó ambos días
+    #Marcar el ticket como UTILIZADO globalmente si ya completó ambos días
     cursor.execute("UPDATE tickets SET estado = 'UTILIZADO' WHERE id_ticket = %s", (resultado["id_ticket"],))
 
     db.commit()
