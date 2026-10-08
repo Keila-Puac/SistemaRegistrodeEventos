@@ -19,7 +19,10 @@
       <div class="barra" role="img" aria-label="<?= $pct ?>% de cupo ocupado"><i style="width:<?= $pct ?>%"></i></div>
       <p class="meta"><?= $ev['inscritos'] ?> de <?= $ev['cupo'] ?> tickets asignados</p>
     </div>
-    <a class="btn sec" href="evento.php?id=<?= $ev['id'] ?>">Ver evento</a>
+    <div class="acc-card">
+      <a class="btn sec" href="evento.php?id=<?= $ev['id'] ?>">Ver evento</a>
+      <a class="btn sec" href="editar_evento.php?id=<?= $ev['id'] ?>">Modificar</a>
+    </div>
   </article>
 <?php endforeach; ?>
 </div>

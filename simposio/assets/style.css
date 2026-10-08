@@ -55,3 +55,8 @@ legend{font-weight:600;padding:0 .4rem}
 .pie{text-align:center;padding:2rem;color:#55627a;font-size:.85rem;border-top:1px solid var(--linea)}
 @media(max-width:760px){.dos{grid-template-columns:1fr}.evento{grid-template-columns:1fr}.fila .grande{grid-column:auto}}
 @media print{.top,.pie,.btn{display:none}}
+.acc-card{display:grid;gap:.5rem}
+.quitar{align-self:end;grid-column:1/-1;justify-self:start;padding:.4rem .8rem;font-size:.9rem}
+.portada .btn{margin-top:.75rem}
+.qr{background:#fff;padding:6px;border:1px solid var(--linea);outline:0;width:118px;height:118px}
+#lector{width:100%;max-width:420px;border:2px solid var(--azul);border-radius:6px;overflow:hidden}

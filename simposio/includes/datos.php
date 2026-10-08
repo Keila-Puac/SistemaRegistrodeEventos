@@ -1,5 +1,6 @@
 <?php
 // SOLO INTERFAZ: datos de ejemplo en sesión. Aquí se conectará la BD después.
+date_default_timezone_set('America/Guatemala'); // hora real de Guatemala (antes usaba UTC)
 session_start();
 if (!isset($_SESSION['eventos'])) {
     $_SESSION['eventos'] = [[
@@ -14,7 +15,6 @@ if (!isset($_SESSION['eventos'])) {
         ],
     ]];
 }
-if (!isset($_SESSION['usados'])) $_SESSION['usados'] = [];
 
 function e($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function buscar_evento($id) {
