@@ -7,6 +7,7 @@ Navegación lateral:
 """
 import csv
 import math
+import os
 import threading
 import time
 import tkinter as tk
@@ -40,7 +41,30 @@ ERR = "#d64545"
 ZEBRA = "#f4f8fe"
 
 FUENTE = "Segoe UI"
-F_BTN = (f"{FUENTE} Semibold", 12)
+ESC = 1.0
+F_BTN = ("Segoe UI", 12, "bold")
+# Fuentes redondeadas / amigables, en orden de preferencia (se usa la primera instalada).
+# Para el mejor resultado instala "Nunito" (gratis en Google Fonts).
+PREFERIDAS = [("Nunito", 1.0), ("Quicksand", 1.0), ("Poppins", 0.93), ("Candara", 1.12),
+              ("Calibri", 1.12), ("Trebuchet MS", 1.0), ("Segoe UI", 1.0)]
+
+
+def F(size, bold=False):
+    """Fuente de la interfaz, ajustada al tamaño visual de la familia elegida."""
+    t = [FUENTE, max(1, round(size * ESC))]
+    if bold:
+        t.append("bold")
+    return tuple(t)
+
+
+def elegir_fuente():
+    global FUENTE, ESC, F_BTN
+    disponibles = {f.lower(): f for f in tkfont.families()}
+    for nombre, esc in PREFERIDAS:
+        if nombre.lower() in disponibles:
+            FUENTE, ESC = disponibles[nombre.lower()], esc
+            break
+    F_BTN = F(12, True)
 
 
 # ==========================================
@@ -105,21 +129,22 @@ ESTILOS = {
 
 
 class RoundButton(tk.Canvas):
-    """Botón en forma de píldora con transición de color al pasar el mouse y efecto de clic."""
+    """Píldora que cambia de color, crece levemente al pasar el mouse y se hunde al hacer clic."""
+    REPOSO = 2  # margen en reposo; al pasar el mouse baja a 0 (el botón "crece")
 
     def __init__(self, parent, text, command=None, style="primary", width=None, height=54,
-                 align="center", radius=None, bg=None):
+                 align="center", radius=None, bg=None, icon=None):
         bg = bg or parent.cget("bg")
         fnt = tkfont.Font(font=F_BTN)
         super().__init__(parent, width=width or fnt.measure(text) + 64, height=height, bg=bg,
                          highlightthickness=0, bd=0, cursor="hand2")
-        self.command, self.align, self.radio = command, align, radius or height // 2
+        self.command, self.align, self.radio, self.icono = command, align, radius or height // 2, icon
         self.texto, self.style = text, style
         self.fill, self.fg = ESTILOS[style]["bg"], ESTILOS[style]["fg"]
-        self.inset, self._h = 0, None
+        self.inset, self.dx, self._h, self._sobre = self.REPOSO, 0, None, False
         self.bind("<Configure>", lambda e: self._dibujar())
-        self.bind("<Enter>", lambda e: self._ir(ESTILOS[self.style]["hover"], ESTILOS[self.style]["fg"]))
-        self.bind("<Leave>", lambda e: self._ir(ESTILOS[self.style]["bg"], ESTILOS[self.style]["fg"]))
+        self.bind("<Enter>", lambda e: self._hover(True))
+        self.bind("<Leave>", lambda e: self._hover(False))
         self.bind("<ButtonPress-1>", self._press)
         self.bind("<ButtonRelease-1>", self._release)
 
@@ -127,29 +152,42 @@ class RoundButton(tk.Canvas):
         w, h, i = self.winfo_width(), self.winfo_height(), self.inset
         self.delete("all")
         rrect(self, 1 + i, 1 + i, w - 1 - i, h - 1 - i, self.radio, fill=self.fill, outline="", tags="r")
-        x, anc = (w / 2, "center") if self.align == "center" else (26, "w")
-        self.create_text(x, h / 2, text=self.texto, fill=self.fg, font=F_BTN, anchor=anc, tags="t")
+        if self.align == "center":
+            self.create_text(w / 2, h / 2, text=self.texto, fill=self.fg, font=F_BTN, tags="t")
+        elif self.icono:  # icono y texto en columnas fijas para que todo quede alineado
+            self.create_text(40 + self.dx, h / 2, text=self.icono, fill=self.fg, font=F_BTN, tags="t")
+            self.create_text(68 + self.dx, h / 2, text=self.texto, fill=self.fg, font=F_BTN, anchor="w", tags="t")
+        else:
+            self.create_text(26 + self.dx, h / 2, text=self.texto, fill=self.fg, font=F_BTN, anchor="w", tags="t")
 
-    def _ir(self, fill, fg, ms=170):
-        f0, g0 = self.fill, self.fg
+    def _ir(self, fill, fg, inset, dx, ms=200):
+        f0, g0, i0, d0 = self.fill, self.fg, self.inset, self.dx
         cancelar(self._h)
 
         def paso(e):
             self.fill, self.fg = lerp(f0, fill, e), lerp(g0, fg, e)
-            self.itemconfigure("r", fill=self.fill)
-            self.itemconfigure("t", fill=self.fg)
+            self.inset, self.dx = i0 + (inset - i0) * e, d0 + (dx - d0) * e
+            self._dibujar()
         self._h = animar(self, ms, paso)
+
+    def _hover(self, on):
+        self._sobre = on
+        e = ESTILOS[self.style]
+        self._ir(e["hover"] if on else e["bg"], e["fg"], 0 if on else self.REPOSO,
+                 6 if (on and self.align == "left") else 0)
 
     def set_style(self, style):
         self.style = style
-        self._ir(ESTILOS[style]["bg"], ESTILOS[style]["fg"], 220)
+        e = ESTILOS[style]
+        self._ir(e["hover"] if self._sobre else e["bg"], e["fg"], self.inset, self.dx, 240)
 
     def _press(self, e):
-        self.inset = 3
+        cancelar(self._h)
+        self.inset = 4
         self._dibujar()
 
     def _release(self, e):
-        self.inset = 0
+        self.inset = 0 if self._sobre else self.REPOSO
         self._dibujar()
         if 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height() and self.command:
             self.command()
@@ -178,11 +216,11 @@ class Card(tk.Canvas):
 class RoundEntry(tk.Canvas):
     """Campo de texto redondeado; el borde se ilumina al enfocar."""
 
-    def __init__(self, parent, height=52, font=(FUENTE, 12), bg=None):
+    def __init__(self, parent, height=52, font=None, bg=None):
         super().__init__(parent, width=10, height=height, bg=bg or parent.cget("bg"),
                          highlightthickness=0, bd=0)
         self.borde, self._h = BORDE, None
-        self.entry = tk.Entry(self, font=font, bd=0, relief="flat", bg="white", fg=TEXT,
+        self.entry = tk.Entry(self, font=font or F(12), bd=0, relief="flat", bg="white", fg=TEXT,
                               insertbackground=PRIMARY, highlightthickness=0)
         self._win = self.create_window(22, height / 2, window=self.entry, anchor="w")
         self.bind("<Configure>", lambda e: self._dibujar())
@@ -254,9 +292,9 @@ class Banner(tk.Canvas):
         self.delete("all")
         rrect(self, 2, 2, w - 2, h - 2, 38, fill=self.fill, outline="")
         if self.icono:
-            self.create_text(w / 2, h * 0.34 + self.dy, text=self.icono, fill=self.fg, font=(f"{FUENTE} Semibold", 40))
+            self.create_text(w / 2, h * 0.34 + self.dy, text=self.icono, fill=self.fg, font=F(40, True))
         self.create_text(w / 2, h * 0.74 if self.icono else h / 2, text=self.msg, fill=self.fg, width=w - 80,
-                         justify="center", font=(f"{FUENTE} Semibold", 16 if self.icono else 22))
+                         justify="center", font=F(16 if self.icono else 22, True))
 
     def mostrar(self, tipo, msg):
         fill, fg, icono = self.ESTADOS[tipo]
@@ -283,8 +321,8 @@ def estilos_ttk():
     st = ttk.Style()
     st.theme_use("clam")
     st.configure("Treeview", background="white", fieldbackground="white", foreground=TEXT, rowheight=40,
-                 borderwidth=0, font=(FUENTE, 10))
-    st.configure("Treeview.Heading", background=SOFT, foreground=PRIMARY, font=(f"{FUENTE} Semibold", 10),
+                 borderwidth=0, font=F(10))
+    st.configure("Treeview.Heading", background=SOFT, foreground=PRIMARY, font=F(10, True),
                  relief="flat", padding=(12, 11), borderwidth=0)
     st.map("Treeview", background=[("selected", LIGHT)], foreground=[("selected", PRIMARY)])
     st.map("Treeview.Heading", background=[("active", LIGHT)])
@@ -320,6 +358,24 @@ def insertar(tree, valores, iid=None, pos="end"):
     tree.insert("", pos, values=valores, tags=(tag,), **kw)
 
 
+def llenar(tree, filas, paso=24, max_anim=12):
+    """Reemplaza el contenido con una pequeña cascada. filas: [(valores, iid o None)]"""
+    vaciar(tree)
+    tok = tree._tok = object()
+
+    def poner(i):
+        if tree._tok is not tok:
+            return
+        while i < len(filas):
+            v, iid = filas[i]
+            insertar(tree, v, iid=iid)
+            i += 1
+            if i <= max_anim:
+                tree.after(paso, lambda: poner(i))
+                return
+    poner(0)
+
+
 # ==========================================
 # APLICACIÓN
 # ==========================================
@@ -330,7 +386,7 @@ class App:
 
     def __init__(self, root):
         self.root = root
-        root.title("Simposio · Registro de Eventos")
+        root.title("Registro de Eventos URL")
         root.geometry("1220x780")
         root.minsize(1000, 660)
         root.configure(bg=BG)
@@ -363,13 +419,12 @@ class App:
         sb = tk.Frame(self.root, bg=PRIMARY, width=250)
         sb.pack(side="left", fill="y")
         sb.pack_propagate(False)
-        logo = tk.Frame(sb, bg=PRIMARY)
-        logo.pack(fill="x", padx=24, pady=(34, 28))
-        tk.Label(logo, text="Simposio", font=(f"{FUENTE} Semibold", 22), fg="white", bg=PRIMARY).pack(anchor="w")
-        tk.Label(logo, text="Registro de eventos", font=(FUENTE, 10), fg=LIGHT, bg=PRIMARY).pack(anchor="w")
+        self._logo(sb)
+        tk.Label(sb, text="Registro de Eventos URL", font=F(17, True), fg="white", bg=PRIMARY,
+                 wraplength=200, justify="left").pack(anchor="w", padx=28, pady=(16, 26))
         for clave, icono, nombre in self.PAGINAS:
-            b = RoundButton(sb, f"{icono}   {nombre}", lambda c=clave: self.ir(c), "nav", height=52,
-                            align="left", radius=20)
+            b = RoundButton(sb, nombre, lambda c=clave: self.ir(c), "nav", height=52,
+                            align="left", radius=20, icon=icono)
             b.pack(fill="x", padx=16, pady=4)
             self.navs[clave] = b
         estado = tk.Frame(sb, bg=PRIMARY)
@@ -377,9 +432,38 @@ class App:
         self.dot = tk.Canvas(estado, width=14, height=14, bg=PRIMARY, highlightthickness=0)
         self.dot.create_oval(2, 2, 12, 12, fill="#5fd6a0", outline="", tags="d")
         self.dot.pack(side="left")
-        self.lbl_estado = tk.Label(estado, text="Listo", font=(FUENTE, 10), fg=SOFT, bg=PRIMARY,
+        self.lbl_estado = tk.Label(estado, text="Listo", font=F(10), fg=SOFT, bg=PRIMARY,
                                    wraplength=180, justify="left")
         self.lbl_estado.pack(side="left", padx=10)
+
+    def _logo(self, sb):
+        """Logo de la universidad en una tarjeta blanca redondeada (se ve bien sobre el azul)."""
+        W, H = 210, 100
+        cv = tk.Canvas(sb, width=W, height=H, bg=PRIMARY, highlightthickness=0, bd=0)
+        cv.pack(padx=20, pady=(30, 0))
+        rrect(cv, 2, 2, W - 2, H - 2, 28, fill=BG, outline="")
+        ruta = next((os.path.join(b, "logo.png") for b in (os.path.dirname(os.path.abspath(__file__)), os.getcwd())
+                     if os.path.exists(os.path.join(b, "logo.png"))), None)
+        try:
+            if not ruta:
+                raise FileNotFoundError("no se encontró logo.png junto a interfaz.py")
+            self.logo_img = self._cargar_logo(ruta, W - 50, H - 34)
+            cv.create_image(W / 2, H / 2, image=self.logo_img)
+        except Exception as e:
+            print("Logo no cargado:", e)
+            cv.create_text(W / 2, H / 2, text="URL", fill=PRIMARY, font=F(28, True))
+
+    @staticmethod
+    def _cargar_logo(ruta, mw, mh):
+        try:
+            from PIL import Image, ImageTk  # reducción suave si Pillow está instalado
+            im = Image.open(ruta).convert("RGBA")
+            im.thumbnail((mw, mh), Image.LANCZOS)
+            return ImageTk.PhotoImage(im)
+        except ImportError:
+            img = tk.PhotoImage(file=ruta)
+            f = max(1, math.ceil(img.width() / mw), math.ceil(img.height() / mh))
+            return img.subsample(f) if f > 1 else img
 
     def ir(self, nombre):
         if nombre == self.actual:
@@ -391,13 +475,13 @@ class App:
                 p.place_forget()
         for k, b in self.navs.items():
             b.set_style("nav_on" if k == nombre else "nav")
-        nuevo.place(relx=0.04, rely=0, relwidth=1, relheight=1)
+        nuevo.place(relx=0.05, rely=0, relwidth=1, relheight=1)
         nuevo.lift()
 
         def fin():
             viejo.place_forget()
             nuevo.place_configure(relx=0)
-        self._pg_h = animar(self.stage, 240, lambda e: nuevo.place_configure(relx=0.04 * (1 - e)), fin)
+        self._pg_h = animar(self.stage, 320, lambda e: nuevo.place_configure(relx=0.05 * (1 - e)), fin)
         self.actual = nombre
         self._al_abrir(nombre)
 
@@ -416,15 +500,15 @@ class App:
     def _cabecera(self, p, titulo, sub):
         f = tk.Frame(p, bg=BG)
         f.pack(fill="x", padx=38, pady=(32, 16))
-        tk.Label(f, text=titulo, font=(f"{FUENTE} Semibold", 26), fg=PRIMARY, bg=BG).pack(anchor="w")
-        tk.Label(f, text=sub, font=(FUENTE, 11), fg=MUTED, bg=BG).pack(anchor="w")
+        tk.Label(f, text=titulo, font=F(26, True), fg=PRIMARY, bg=BG).pack(anchor="w")
+        tk.Label(f, text=sub, font=F(11), fg=MUTED, bg=BG).pack(anchor="w")
         cuerpo = tk.Frame(p, bg=BG)
         cuerpo.pack(fill="both", expand=True, padx=38, pady=(0, 32))
         return cuerpo
 
     @staticmethod
     def _titulo(padre, texto):
-        tk.Label(padre, text=texto, font=(f"{FUENTE} Semibold", 13), fg=PRIMARY, bg="white").pack(anchor="w", pady=(0, 10))
+        tk.Label(padre, text=texto, font=F(13, True), fg=PRIMARY, bg="white").pack(anchor="w", pady=(0, 10))
 
     # ---------- trabajo en segundo plano ----------
     def bg(self, fn, ok=None, msg="Trabajando…", excl=False):
@@ -487,10 +571,10 @@ class App:
         for i, (k, t) in enumerate([("rev", "En revisión manual"), ("sin", "Estudiantes sin aceptar"),
                                     ("qr", "QRs emitidos")]):
             stats.grid_columnconfigure(i, weight=1, uniform="s")
-            card = Card(stats, height=124)
+            card = Card(stats, height=150, pad=18)
             card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 9, 0 if i == 2 else 9))
-            tk.Label(card.body, text=t, font=(FUENTE, 10), fg=MUTED, bg="white").pack(anchor="w")
-            self.stat[k] = tk.Label(card.body, text="–", font=(f"{FUENTE} Semibold", 34), fg=PRIMARY, bg="white")
+            tk.Label(card.body, text=t, font=F(10), fg=MUTED, bg="white").pack(anchor="w")
+            self.stat[k] = tk.Label(card.body, text="–", font=F(32, True), fg=PRIMARY, bg="white")
             self.stat[k].pack(anchor="w")
 
         card = Card(c)
@@ -516,8 +600,8 @@ class App:
                     len(self.mng.obtener_base_qr()))
 
         def ok(r):
-            for k, v in zip(("rev", "sin", "qr"), r):
-                self.contar(self.stat[k], v)
+            for i, (k, v) in enumerate(zip(("rev", "sin", "qr"), r)):
+                self.root.after(i * 130, lambda k=k, v=v: self.contar(self.stat[k], v))
         self.bg(calc, ok, "Actualizando resumen…")
 
     def procesar(self):
@@ -572,10 +656,8 @@ class App:
     def cargar_pendientes(self):
         def ok(lista):
             self.pend = lista
-            vaciar(self.t_pend)
             vaciar(self.t_cand)
-            for f in lista:
-                insertar(self.t_pend, (f["id_pago"], f["nombre"], f["motivo"]), iid=str(f["id_pago"]))
+            llenar(self.t_pend, [((f["id_pago"], f["nombre"], f["motivo"]), str(f["id_pago"])) for f in lista])
         self.bg(self.mng.manual.facturas_pendientes, ok, "Cargando recibos…")
 
     def _factura_sel(self):
@@ -591,9 +673,9 @@ class App:
         f = next((x for x in self.pend if sel and str(x["id_pago"]) == sel[0]), None)
         if not f:
             return
-        for i, c in enumerate(f["candidatos"]):
-            insertar(self.t_cand, (c["carnet"], c["nombre_completo"], c["puntaje"],
-                                   "YA VALIDADO" if c.get("ya_validado") else "Disponible"), iid=str(i))
+        llenar(self.t_cand, [((c["carnet"], c["nombre_completo"], c["puntaje"],
+                               "YA VALIDADO" if c.get("ya_validado") else "Disponible"), str(i))
+                             for i, c in enumerate(f["candidatos"])])
 
     def _cand_sel(self, f):
         sel = self.t_cand.selection()
@@ -653,7 +735,7 @@ class App:
         RoundButton(fila, "💾   Exportar CSV", self.exportar, "secondary", height=58).pack(side="left", padx=12)
         RoundButton(fila, "✔   Marcar como enviado", self.marcar_enviado, "secondary", height=58).pack(side="left")
         tk.Label(c, text="Las cadenas solo existen en esta pantalla: expórtalas antes de cerrar la aplicación.",
-                 font=(FUENTE, 10), fg=ERR, bg=BG).pack(anchor="w", pady=(12, 12))
+                 font=F(10), fg=ERR, bg=BG).pack(anchor="w", pady=(12, 12))
         card = Card(c)
         card.pack(fill="both", expand=True)
         m, self.t_emit = crear_tabla(card.body, [("carnet", "Carnet", 90), ("nombre", "Nombre", 230),
@@ -663,9 +745,8 @@ class App:
     def emitir(self):
         def ok(r):
             self.listos = r["listos"]
-            vaciar(self.t_emit)
-            for q in self.listos:
-                insertar(self.t_emit, (q["carnet"], q["nombre"], q["correo"], q["cadena"]), iid=q["carnet"])
+            llenar(self.t_emit, [((q["carnet"], q["nombre"], q["correo"], q["cadena"]), q["carnet"])
+                                 for q in self.listos])
             msg = r["mensaje"]
             if r["fallidos"]:
                 msg += "\nFallidos: " + "; ".join(f"{c} ({m})" for c, m in r["fallidos"])
@@ -749,10 +830,8 @@ class App:
 
         def ok(filas):
             self.rechazados = filas
-            vaciar(self.t_rech)
-            for i, r in enumerate(filas):
-                insertar(self.t_rech, (r["id_pago"], r["no_recibo"], r["nombre_pagador"], r["monto"], r["motivo"],
-                                       r["fecha_rechazo"]), iid=str(i))
+            llenar(self.t_rech, [((r["id_pago"], r["no_recibo"], r["nombre_pagador"], r["monto"], r["motivo"],
+                                   r["fecha_rechazo"]), str(i)) for i, r in enumerate(filas)])
         self.bg(lambda: self.mng.manual.rechazados(motivo), ok, "Cargando rechazados…")
 
     def detalle_rechazo(self):
@@ -781,15 +860,15 @@ class App:
 
     def cargar_base(self):
         def ok(filas):
-            vaciar(self.t_base)
-            for r in filas:
+            def fila(r):
                 v = [r["carnet"], r["codigo_hash"], "Sí" if r["enviado"] else "No", r["fecha_emision"]]
-                v += ["✔" if r.get(f"estado{i}") else "—" for i in range(1, SESIONES + 1)]
-                insertar(self.t_base, v)
+                return v + ["✔" if r.get(f"estado{i}") else "—" for i in range(1, SESIONES + 1)]
+            llenar(self.t_base, [(fila(r), None) for r in filas])
         self.bg(self.mng.obtener_base_qr, ok, "Cargando base de QRs…")
 
 
 if __name__ == "__main__":
     raiz = tk.Tk()
+    elegir_fuente()
     App(raiz)
     raiz.mainloop()
