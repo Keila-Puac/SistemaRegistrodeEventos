@@ -1,29 +1,41 @@
-from generador_qr_pdf import enviar_correo_twilo, generar_pdf_ticket
+import os
+from dotenv import load_dotenv
+from generador_qr_pdf import enviador_para_automata
 
-# 1. Datos de prueba
-correo_destino = "correo_prueba@gamil.com"
-nombre_prueba = "Usuario de Prueba"
-carnet_prueba = "1234567"
-cadena_qr_prueba = "TICKET-TEST-1234567-EVENTO"
+# 1. Cargar variables de entorno desde el archivo .env
+load_dotenv()
 
-# Datos para el PDF
-estudiante_prueba = {
-    "nombre_completo": nombre_prueba,
-    "carnet": carnet_prueba,
-    "carrera": "Ingeniería en Sistemas",
-    "correo": correo_destino
-}
+# 2. Datos de prueba
+CORREO_PRUEBA = "jackelinvasquezguzman@gmail.com"
+NOMBRE_PRUEBA = "Jackelin Vásquez (Prueba)"
+CARNET_PRUEBA = "9999926"
+CADENA_QR_PRUEBA = "URL-SIMPOSIO-2026-TEST-9999926"
 
-ruta_pdf_test = f"Ticket_Test_{carnet_prueba}.pdf"
+if __name__ == "__main__":
+    print("=== INICIANDO PRUEBA DE EMISIÓN Y ENVÍO DE TICKET ===")
 
-print("1. Generando PDF de prueba...")
-generar_pdf_ticket(estudiante_prueba, cadena_qr_prueba, ruta_pdf_test)
-print(f"PDF creado: {ruta_pdf_test}")
+    # Verificación de variables de entorno
+    api_key = os.getenv("SENDGRID_API_KEY")
+    remitente = os.getenv("MAIL_USER")
 
-print("\n2. Enviando correo vía Twilio SendGrid...")
-exito = enviar_correo_twilo(correo_destino, nombre_prueba, ruta_pdf_test)
+    if not api_key:
+        print("⚠ ALERTA: No se encontró 'SENDGRID_API_KEY' en el archivo .env")
+    if not remitente:
+        print("⚠ ALERTA: No se encontró 'MAIL_USER' en el archivo .env")
 
-if exito:
-    print("\n¡Prueba exitosa! Revisa tu bandeja de entrada (y la carpeta de SPAM).")
-else:
-    print("\nEl envío falló. Revisa la clave API y el correo remitente.")
+    print(f"Enviando ticket de prueba a: {CORREO_PRUEBA}...")
+
+    # 3. Ejecutar la función emisora
+    resultado = enviador_para_automata(
+        destino=CORREO_PRUEBA,
+        nombre=NOMBRE_PRUEBA,
+        carnet=CARNET_PRUEBA,
+        cadena_qr=CADENA_QR_PRUEBA
+    )
+
+    if resultado:
+        print("\n¡Prueba completada con éxito!")
+        print(f"1. Se generó el PDF en la carpeta 'tickets_pdf/Ticket_{CARNET_PRUEBA}.pdf'")
+        print("2. Revisa tu bandeja de entrada (y la carpeta de spam).")
+    else:
+        print("\nLa prueba falló al enviar el correo. Revisa las alertas arriba.")

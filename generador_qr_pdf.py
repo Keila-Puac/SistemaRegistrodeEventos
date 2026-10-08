@@ -9,11 +9,13 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from PIL import Image as PILImage
 
 from automata import qrDbMng  # Importamos el autómata
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- CONFIGURACIÓN DE TWILIO SENDGRID ---
-# La API Key se obtiene desde la variable de entorno para evitar filtrar credenciales en Git.
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
-MAIL_REMITENTE = "applepiee056@gmail.com"
+MAIL_REMITENTE = os.getenv("MAIL_USER", "applepiee056@gmail.com")
 
 
 def generar_imagen_qr_personalizado(cadena_qr, ruta_salida, ruta_logo="logo_url.png"):
@@ -217,7 +219,7 @@ def enviar_correo_twilo(destinatario, nombre_asistente, ruta_pdf):
                 "Content-Type": "application/json"
             },
             json=datos,
-            timeout=15
+            timeout=10  # Si pasan 10 segundos sin respuesta, arrojará un error en lugar de congelarse
         )
 
         if respuesta.status_code == 202 or respuesta.ok:
