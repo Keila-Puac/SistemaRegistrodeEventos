@@ -11,8 +11,8 @@ from PIL import Image as PILImage
 from automata import qrDbMng  # Importamos el autómata
 
 # --- CONFIGURACIÓN DE TWILIO SENDGRID ---
-SENDGRID_API_KEY = "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"
-MAIL_REMITENTE = "applepiee056@gmail.com"
+SENDGRID_API_KEY = "-" #Git no me deja subir la contra x,d
+MAIL_REMITENTE = "-"
 
 
 def generar_imagen_qr_personalizado(cadena_qr, ruta_salida, ruta_logo="logo_url.png"):
