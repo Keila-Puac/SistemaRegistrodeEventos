@@ -11,8 +11,9 @@ from PIL import Image as PILImage
 from automata import qrDbMng  # Importamos el autómata
 
 # --- CONFIGURACIÓN DE TWILIO SENDGRID ---
-SENDGRID_API_KEY = "-" #Git no me deja subir la contra x,d
-MAIL_REMITENTE = "-"
+# La API Key se obtiene desde la variable de entorno para evitar filtrar credenciales en Git.
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
+MAIL_REMITENTE = "applepiee056@gmail.com"
 
 
 def generar_imagen_qr_personalizado(cadena_qr, ruta_salida, ruta_logo="logo_url.png"):
@@ -20,7 +21,6 @@ def generar_imagen_qr_personalizado(cadena_qr, ruta_salida, ruta_logo="logo_url.
     Genera un código QR estético con colores institucionales y el logo
     de la Universidad en el centro.
     """
-
     qr = qrcode.QRCode(
         version=3,
         error_correction=qrcode.constants.ERROR_CORRECT_H,  # Permite hasta 30% de daño/cobertura
@@ -30,14 +30,14 @@ def generar_imagen_qr_personalizado(cadena_qr, ruta_salida, ruta_logo="logo_url.
     qr.add_data(cadena_qr)
     qr.make(fit=True)
 
-    # 2. Generar imagen del QR con colores personalizados (Azul marino / Blanco)
+    # Generar imagen del QR con colores personalizados (Azul marino / Blanco)
     img_qr = qr.make_image(fill_color="#002B49", back_color="white").convert('RGB')
 
-    # 3. Insertar el escudo si existe la imagen
+    # Insertar el escudo si existe la imagen
     if os.path.exists(ruta_logo):
         logo = PILImage.open(ruta_logo)
 
-        # Convertir a RGBA para manejar transparencias si las tiene
+        # Convertir a RGBA para manejar transparencias
         if logo.mode != 'RGBA':
             logo = logo.convert('RGBA')
 
@@ -46,14 +46,14 @@ def generar_imagen_qr_personalizado(cadena_qr, ruta_salida, ruta_logo="logo_url.
         logo_size = int(qr_width * 0.25)
         logo = logo.resize((logo_size, logo_size), PILImage.Resampling.LANCZOS)
 
-        # Crear un fondo blanco redondeado o cuadrado detrás del logo para mejorar lectura
+        # Centrar el logo en el código QR
         pos_x = (qr_width - logo_size) // 2
         pos_y = (qr_height - logo_size) // 2
 
         # Superponer logo en el centro
         img_qr.paste(logo, (pos_x, pos_y), mask=logo if logo.mode == 'RGBA' else None)
 
-    # 4. Guardar resultado final
+    # Guardar resultado final
     img_qr.save(ruta_salida)
     return ruta_salida
 
@@ -161,8 +161,8 @@ def generar_pdf_ticket(estudiante, cadena_qr, ruta_pdf):
 
 def enviar_correo_twilo(destinatario, nombre_asistente, ruta_pdf):
     """Envía el boleto en formato PDF adjunto mediante la API HTTP de Twilio SendGrid."""
-    if not SENDGRID_API_KEY or "tu_clave_api" in SENDGRID_API_KEY:
-        print("[MAIL ERROR]: Falta configurar la API Key de Twilio SendGrid.")
+    if not SENDGRID_API_KEY:
+        print("[MAIL ERROR]: Falta configurar la API Key de Twilio SendGrid en las variables de entorno.")
         return False
 
     try:
@@ -224,7 +224,7 @@ def enviar_correo_twilo(destinatario, nombre_asistente, ruta_pdf):
             print(f"✓ [TWILIO SENDGRID]: Correo enviado exitosamente a {destinatario}")
             return True
         else:
-            print(f"✖ [TWILIO SENDGRID ERROR]: {respuesta.status_code} - {respuesta.text}")
+            print(f"✖ [TWILIO SENDGRID ERROR]: {respuesta.status_code}\n{respuesta.text}")
             return False
 
     except Exception as e:
@@ -248,13 +248,9 @@ def enviador_para_automata(destino, nombre, carnet, cadena_qr):
 
 # --- BLOQUE PRINCIPAL DE EJECUCIÓN ---
 if __name__ == "__main__":
-    # Aseguramos que las variables del sistema reconozcan la API KEY de Twilio
-    os.environ["SENDGRID_API_KEY"] = SENDGRID_API_KEY
-    os.environ["MAIL_USER"] = MAIL_REMITENTE
-
     print("=== INICIANDO PROCESO DE VALIDACIÓN Y EMISIÓN DE TICKETS ===")
 
-    # Instanciamos el gestor de tu amigo pasándole nuestra función emisora
+    # Instanciamos el gestor pasándole nuestra función emisora
     gestor = qrDbMng(sesiones=2, enviador=enviador_para_automata)
 
     print("\n1. Procesando recibos pendientes...")
