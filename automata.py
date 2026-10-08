@@ -418,11 +418,11 @@ class AFND(Automata):
 # ==========================================
 class manualCheckout:
     """Evalúa los recibos que el autómata mandó a q6 y consulta estudiantes sin aceptar."""
-
+ 
     def __init__(self, afnd, progreso):
         self.afnd = afnd
         self.progreso = progreso
-
+ 
     def facturas_pendientes(self):
         sql = (f"SELECT pp.id_pago, pp.relacionados, p.{COL_NOMBRE_PAGO} AS nombre "
                "FROM pagos_pendientes pp LEFT JOIN pagos p ON p.id_pago = pp.id_pago")
@@ -441,13 +441,13 @@ class manualCheckout:
             salida.append({"id_pago": f["id_pago"], "nombre": f["nombre"],
                            "motivo": rel.get("motivo"), "candidatos": rel.get("candidatos", [])})
         return salida
-
+ 
     def estudiantes_sin_aceptar(self):
         return self.afnd.obtener_pendientes()
-
+ 
     def buscar(self, texto, limite=10):
         return self.afnd.obtener_similares(texto, limite=limite, umbral=50)
-
+ 
     def aceptar(self, id_pago, carnet):
         carnet = str(carnet)
         if carnet not in {str(e["carnet"]) for e in self.afnd.est_list}:
@@ -458,7 +458,7 @@ class manualCheckout:
         self.progreso.registrar(id_pago, "MANUAL_V", carnet, ["q6", "V", "q7"])
         self.progreso.guardar()
         return {"ok": True, "mensaje": f"Recibo #{id_pago} aceptado manualmente para el carnet {carnet}"}
-
+ 
     def rechazar(self, id_pago, motivo="NM"):
         """motivo: NC (no hay nombres relacionados) o NM (se rechazaron los sugeridos)."""
         if motivo not in ("NC", "NM"):
@@ -469,12 +469,12 @@ class manualCheckout:
         con_bd(lambda c: c.execute("DELETE FROM pagos_pendientes WHERE id_pago = %s", (id_pago,)))
         causa = "sin nombres relacionados" if motivo == "NC" else "se rechazaron los nombres sugeridos"
         return {"ok": True, "mensaje": f"Recibo #{id_pago} rechazado ({motivo}: {causa})"}
-
+ 
     def resumen(self):
         pend = self.facturas_pendientes()
         return (f"Recibos en revisión: {len(pend)} | "
                 f"Estudiantes sin aceptar: {len(self.estudiantes_sin_aceptar())}")
-
+ 
     @staticmethod
     def _mostrar(f, salida):
         salida(f"\n── Recibo #{f['id_pago']} · a nombre de: {f['nombre']!r} · motivo: {f['motivo']}")
@@ -485,7 +485,7 @@ class manualCheckout:
             salida(f"   {i}) {c['nombre_completo']}  ({c['carnet']})  {c['puntaje']}%{marca}")
         salida("   [número]=aceptar · b texto=buscar · c carnet=aceptar por carnet · "
                "r=rechazar · s=saltar · q=salir")
-
+ 
     def revisar_todo(self, entrada=input, salida=print):
         """Bucle interactivo de consola. Se puede salir con q y retomar después."""
         try:
@@ -527,8 +527,8 @@ class manualCheckout:
                         salida(f"   ✖ {e}")
         except ConexionPerdida as e:
             salida(f"Conexión perdida: {e}\nTu progreso está guardado; vuelve a ejecutar la revisión.")
-
-
+ 
+ 
 # ==========================================
 # GESTOR PRINCIPAL
 # ==========================================
@@ -544,7 +544,7 @@ class qrDbMng:
         self.afnd = AFND()
         self.manual = manualCheckout(self.afnd, self.progreso)
         self.create_qr_db()
-
+ 
     # ---------- tabla externa (SQLite) ----------
     @contextlib.contextmanager
     def _ext(self):
@@ -555,7 +555,7 @@ class qrDbMng:
             conn.commit()
         finally:
             conn.close()
-
+ 
     def create_qr_db(self):
         """Crea la tabla externa de QRs; si aumentan las sesiones, agrega las columnas faltantes."""
         with self._ext() as db:
@@ -571,19 +571,19 @@ class qrDbMng:
             for i in range(1, self.sesiones + 1):
                 if f"estado{i}" not in existentes:
                     db.execute(f"ALTER TABLE qr_tickets ADD COLUMN estado{i} INTEGER NOT NULL DEFAULT 0")
-
+ 
     def obtener_base_qr(self):
         with self._ext() as db:
             return [dict(r) for r in db.execute("SELECT * FROM qr_tickets ORDER BY id_codigo")]
-
+ 
     # ---------- QR ----------
     def generar_cadena(self, estudiante):
         """q8: iniciales + carnet + parte aleatoria."""
         return iniciales(estudiante["nombre_completo"]) + str(estudiante["carnet"]) + secrets.token_hex(16)
-
+ 
     def hash_codigo(self, cadena):
         return hashlib.sha256(cadena.encode("utf-8")).hexdigest()
-
+ 
     def _guardar_qr(self, carnet, codigo_hash):
         """q11: guarda (o reemplaza, si aún no se había enviado) el hash del QR."""
         ahora = datetime.now().isoformat(timespec="seconds")
@@ -594,19 +594,19 @@ class qrDbMng:
                 ON CONFLICT(carnet) DO UPDATE SET codigo_hash = excluded.codigo_hash,
                                                  fecha_emision = excluded.fecha_emision
                 WHERE qr_tickets.enviado = 0""", (carnet, codigo_hash, ahora))
-
+ 
     def _marcar_enviado(self, carnet):
         with self._ext() as db:
             db.execute("UPDATE qr_tickets SET enviado = 1 WHERE carnet = ?", (carnet,))
-
+ 
     def _carnets_enviados(self):
         with self._ext() as db:
             return {r["carnet"] for r in db.execute("SELECT carnet FROM qr_tickets WHERE enviado = 1")}
-
+ 
     # ---------- pasos del flujo ----------
     def procesar_pendientes(self, limite=None):
         """Pasa los recibos pendientes por el autómata. Se puede interrumpir y reanudar."""
-        res = {"aceptados": 0, "a_revision": 0, "interrumpido": False, "mensajes": []}
+        res = {"aceptados": 0, "a_revision": 0, "rechazados": 0, "interrumpido": False, "mensajes": []}
         try:
             facturas = self.afnd.obtener_facturas_por_procesar(self.progreso)
             for f in facturas[:limite]:
@@ -626,7 +626,7 @@ class qrDbMng:
                           + (". Proceso interrumpido por pérdida de conexión; el progreso quedó guardado."
                              if res["interrumpido"] else "."))
         return res
-
+ 
     def emitir_qrs(self, carnets=None):
         """
         Q8–Q12. Para cada aceptado sin QR: crea la cadena, guarda su hash en la tabla externa
@@ -646,7 +646,7 @@ class qrDbMng:
         cola = [c for c in aceptados if c not in enviados and (solo is None or c in solo)]
         est_por_carnet = {str(e["carnet"]): e for e in self.afnd.est_list}
         res = {"listos": [], "enviados": [], "fallidos": []}
-
+ 
         for carnet in cola:
             est = est_por_carnet.get(carnet)
             if not est:
@@ -662,7 +662,7 @@ class qrDbMng:
             auto.leer("V")                                  # q12
             self.progreso.registrar(f"qr:{carnet}", "QR_CREADO", carnet, auto.traza)
             self.progreso.guardar()
-
+ 
             if self.enviador is None:
                 res["listos"].append({"carnet": carnet, "nombre": est["nombre_completo"],
                                       "correo": est.get(COL_CORREO), "cadena": cadena})
@@ -675,31 +675,179 @@ class qrDbMng:
                     res["fallidos"].append((carnet, "el envío no fue confirmado"))
             except Exception as e:                          # el enviador es código externo
                 res["fallidos"].append((carnet, f"error de envío: {e}"))
-
+ 
         res["mensaje"] = (f"QRs creados pendientes de envío: {len(res['listos'])} · "
                           f"enviados: {len(res['enviados'])} · fallidos: {len(res['fallidos'])}")
         return res
-
+ 
     def confirmar_envio(self, carnet):
         """Marca un QR como enviado (lo llama quien envía los correos al terminar)."""
         self._marcar_enviado(str(carnet))
         self.progreso.registrar(f"qr:{carnet}", "ENVIADO", str(carnet), [])
         self.progreso.guardar()
-
+ 
     def verificar_qr(self, cadena, sesion=1):
-        """Puerta del evento: valida el QR y marca la sesión de forma atómica."""
+        """Atajo: la validación real la hace el AFDValidador (aplicación auxiliar)."""
+        return AFDValidador(self.ruta_db, self.sesiones).validar(cadena, sesion)
+ 
+
+
+class AFD:
+    """
+    Estados: q0 esperando QR · q1 QR recibido · q2 buscando QR en la BD ·
+             q3 analizando validez para el evento actual ·
+             q4 acceso concedido (ACEPTACIÓN) · q5 acceso denegado.
+    Alfabeto: q código QR · e existencia del código · v validez del código ·
+              n paso de validación sin falla (cierra el análisis).
+    Lenguaje aceptado: únicamente "qevn". Cualquier otro símbolo, en cualquier estado
+    (incluidos símbolos fuera del alfabeto), lleva a q5, que es un estado trampa.
+    """
+    NOMBRES = {
+        "q0": "Esperando QR", "q1": "QR recibido", "q2": "Buscando QR en la base de datos",
+        "q3": "Analizando validez del QR para el evento actual",
+        "q4": "Acceso al evento concedido", "q5": "Acceso denegado al evento",
+    }
+    SIGMA = {"q", "e", "v", "n"}
+    DELTA = {("q0", "q"): "q1", ("q1", "e"): "q2", ("q2", "v"): "q3", ("q3", "n"): "q4"}
+    INICIAL = "q0"
+    FINALES = {"q4"}
+    TRAMPA = "q5"
+ 
+    def __init__(self):
+        self.reiniciar()
+ 
+    def reiniciar(self):
+        self.actual = self.INICIAL
+        self.traza = [self.INICIAL]
+ 
+    def leer(self, simbolo):
+        self.actual = self.DELTA.get((self.actual, simbolo), self.TRAMPA)
+        self.traza += [simbolo, self.actual]
+        return self.actual
+ 
+    def acepta(self):
+        return self.actual in self.FINALES
+ 
+    def evaluar(self, cadena):
+        """Procesa una cadena completa (p. ej. "qevn") y dice si es aceptada."""
+        self.reiniciar()
+        for simbolo in cadena:
+            self.leer(simbolo)
+        return self.acepta()
+ 
+ 
+class AFDValidador:
+    """
+    Convierte lo que pasa en la puerta en una cadena de símbolos y se la da al AFD.
+        q : se leyó un código QR
+        e : el hash del código SÍ existe en qr_externo.db
+        v : el código es válido para la sesión actual (no se había usado)
+        n : el registro del ingreso terminó sin fallas
+    Si una comprobación falla, se le da al AFD un símbolo de falla ("x") y cae en q5.
+    Horario: cada sesión puede tener una ventana (inicio, fin) guardada en la tabla
+    horarios_sesion de qr_externo.db. Fuera de ella el QR se rechaza SIN consumirse.
+    Una sesión sin horario configurado no tiene restricción.
+    """
+ 
+    def __init__(self, ruta_db=DB_EXTERNA, sesiones=1):
+        self.ruta_db = ruta_db
+        self.sesiones = sesiones
+        self.afd = AFD()
+        with contextlib.suppress(sqlite3.Error):
+            self._asegurar_tabla_horarios()
+ 
+    # ---------- horarios por sesión ----------
+    def _asegurar_tabla_horarios(self):
+        with contextlib.closing(sqlite3.connect(self.ruta_db)) as c:
+            c.execute("CREATE TABLE IF NOT EXISTS horarios_sesion ("
+                      "sesion INTEGER PRIMARY KEY, inicio TEXT NOT NULL, fin TEXT NOT NULL)")
+            c.commit()
+ 
+    def configurar_horario(self, sesion, inicio, fin):
+        """Define (o reemplaza) la ventana de la sesión. `inicio` y `fin` son datetime."""
         if not 1 <= sesion <= self.sesiones:
             raise ValueError("sesión fuera de rango")
-        h = self.hash_codigo(cadena)
-        with self._ext() as db:
-            fila = db.execute("SELECT carnet FROM qr_tickets WHERE codigo_hash = ?", (h,)).fetchone()
-            if not fila:
-                return {"autorizado": False, "mensaje": "QR INEXISTENTE"}
-            cur = db.execute(f"UPDATE qr_tickets SET estado{sesion} = 1 "
-                             f"WHERE codigo_hash = ? AND estado{sesion} = 0", (h,))
-            if cur.rowcount == 0:
-                return {"autorizado": False, "mensaje": "QR YA USADO EN ESTA SESIÓN"}
-            return {"autorizado": True, "mensaje": "ACCESO AUTORIZADO", "carnet": fila["carnet"]}
+        if inicio >= fin:
+            raise ValueError("el inicio debe ser anterior al fin")
+        self._asegurar_tabla_horarios()
+        with contextlib.closing(sqlite3.connect(self.ruta_db)) as c:
+            c.execute("INSERT INTO horarios_sesion (sesion, inicio, fin) VALUES (?, ?, ?) "
+                      "ON CONFLICT(sesion) DO UPDATE SET inicio = excluded.inicio, fin = excluded.fin",
+                      (sesion, inicio.isoformat(timespec="seconds"), fin.isoformat(timespec="seconds")))
+            c.commit()
+ 
+    def quitar_horario(self, sesion):
+        """Quita la restricción de horario de la sesión."""
+        self._asegurar_tabla_horarios()
+        with contextlib.closing(sqlite3.connect(self.ruta_db)) as c:
+            c.execute("DELETE FROM horarios_sesion WHERE sesion = ?", (sesion,))
+            c.commit()
+ 
+    def obtener_horarios(self):
+        """{sesion: (inicio, fin)} con datetime."""
+        with contextlib.closing(sqlite3.connect(self.ruta_db)) as c:
+            return {r[0]: (datetime.fromisoformat(r[1]), datetime.fromisoformat(r[2]))
+                    for r in c.execute("SELECT sesion, inicio, fin FROM horarios_sesion")}
+ 
+    @staticmethod
+    def _en_horario(conn, sesion, ahora):
+        fila = conn.execute("SELECT inicio, fin FROM horarios_sesion WHERE sesion = ?", (sesion,)).fetchone()
+        if not fila:
+            return True, None
+        inicio, fin = datetime.fromisoformat(fila["inicio"]), datetime.fromisoformat(fila["fin"])
+        return inicio <= ahora <= fin, (inicio, fin)
+ 
+    @staticmethod
+    def hash_codigo(cadena):
+        return hashlib.sha256(cadena.encode("utf-8")).hexdigest()
+ 
+    def _respuesta(self, autorizado, mensaje, carnet=None):
+        return {"autorizado": autorizado, "mensaje": mensaje, "carnet": carnet,
+                "estado_final": self.afd.actual, "traza": self.afd.traza,
+                "entrada": "".join(self.afd.traza[1::2])}
+ 
+    def validar(self, cadena_qr, sesion=1, ahora=None):
+        """
+        Devuelve {autorizado, mensaje, carnet, estado_final, traza, entrada}.
+        `ahora` (datetime) es opcional y sirve para pruebas; por defecto es la hora actual.
+        """
+        self.afd.reiniciar()
+        self.afd.leer("q")                                   # q0 -> q1
+        if not 1 <= sesion <= self.sesiones:
+            self.afd.leer("x")
+            return self._respuesta(False, "SESIÓN NO VÁLIDA")
+        h = self.hash_codigo(cadena_qr or "")
+        try:
+            conn = sqlite3.connect(self.ruta_db)
+            conn.row_factory = sqlite3.Row
+            try:
+                fila = conn.execute("SELECT carnet FROM qr_tickets WHERE codigo_hash = ?", (h,)).fetchone()
+                if not fila:
+                    self.afd.leer("x")                       # q1 -> q5
+                    return self._respuesta(False, "QR INEXISTENTE")
+                self.afd.leer("e")                           # q1 -> q2
+                en_horario, ventana = self._en_horario(conn, sesion, ahora or datetime.now())
+                if not en_horario:                           # antes del UPDATE: el QR no se consume
+                    self.afd.leer("x")                       # q2 -> q5
+                    return self._respuesta(
+                        False, f"FUERA DE HORARIO: la sesión {sesion} es de "
+                               f"{ventana[0]:%d/%m %H:%M} a {ventana[1]:%d/%m %H:%M}", fila["carnet"])
+                cur = conn.execute(f"UPDATE qr_tickets SET estado{sesion} = 1 "
+                                   f"WHERE codigo_hash = ? AND estado{sesion} = 0", (h,))
+                conn.commit()
+                if cur.rowcount == 0:
+                    self.afd.leer("x")                       # q2 -> q5
+                    return self._respuesta(False, "QR YA USADO EN ESTA SESIÓN", fila["carnet"])
+                self.afd.leer("v")                           # q2 -> q3
+                self.afd.leer("n")                           # q3 -> q4
+                return self._respuesta(True, "ACCESO AUTORIZADO", fila["carnet"])
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            self.afd.leer("x")
+            return self._respuesta(False, f"BASE DE QRs NO DISPONIBLE: {e}")
+ 
+ 
 
 
 # ==========================================
