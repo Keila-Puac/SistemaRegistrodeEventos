@@ -18,7 +18,7 @@ ruta_pdf_test = f"Ticket_Test_{carnet_prueba}.pdf"
 
 print("1. Generando PDF de prueba...")
 generar_pdf_ticket(estudiante_prueba, cadena_qr_prueba, ruta_pdf_test)
-print(f"✓ PDF creado: {ruta_pdf_test}")
+print(f"PDF creado: {ruta_pdf_test}")
 
 print("\n2. Enviando correo vía Twilio SendGrid...")
 exito = enviar_correo_twilo(correo_destino, nombre_prueba, ruta_pdf_test)
