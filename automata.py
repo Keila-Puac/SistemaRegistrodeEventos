@@ -64,6 +64,17 @@ ESTADO_PAGO_VALIDADO = "VALIDADO"
 MONTO_CORRECTO = 300
 
 ARCHIVO_PROGRESO = "progreso_qr.json"
+DDL_PAGOS_RECHAZADOS = """
+CREATE TABLE IF NOT EXISTS pagos_rechazados (
+    id_rechazo INT AUTO_INCREMENT PRIMARY KEY,
+    id_pago INT NOT NULL,
+    no_recibo VARCHAR(50),
+    nombre_pagador VARCHAR(150),
+    monto DECIMAL(10,2),
+    motivo VARCHAR(10) NOT NULL,
+    candidatos TEXT,
+    fecha_rechazo DATETIME NOT NULL
+)"""
 ARCHIVO_CACHE = "cache_estudiantes.json"
 DB_EXTERNA = "qr_externo.db"
 
@@ -222,14 +233,14 @@ class Automata:
         ("q6", "V"): {"q7"}, ("q6", "X"): {"qE"},
         ("q7", "V"): {"q8"}, ("q8", "V"): {"q9"}, ("q9", "V"): {"q10"},
         ("q10", "V"): {"q11"}, ("q11", "V"): {"q12"}, ("q12", "E"): {"q0"},
-        ("q1", "N"): {"q2"}, ("q1", "X"): {"qE"},
+        ("q1", "X"): {"qE"},
     }
     INICIAL = "q0"
     FINALES = {"q7"}
 
     def __init__(self, inicio=None):
-        self.actuales = {inicio or self.INICIAL}
-        self.traza = [sorted(self.actuales)[0]]
+        self._inicio = inicio or self.INICIAL
+        self.reiniciar()
 
     def leer(self, simbolo):
         siguientes = set()
@@ -245,7 +256,8 @@ class Automata:
         return bool(self.actuales & self.FINALES)
 
     def reiniciar(self):
-        self.__init__()
+        self.actuales = {self._inicio}
+        self.traza = [self._inicio]
 
 
 class AFND(Automata):
@@ -254,6 +266,7 @@ class AFND(Automata):
     def __init__(self, inicio=None):
         super().__init__(inicio)
         self._est_list = None
+        self._tabla_rechazos = False
 
     # ---------- estudiantes (con caché para trabajar sin conexión) ----------
     @property
@@ -290,13 +303,68 @@ class AFND(Automata):
 
     def obtener_facturas_por_procesar(self, progreso=None):
         """Pagos pendientes que aún no están en revisión manual ni fueron rechazados."""
+        self.asegurar_tabla_rechazados()
         sql = (f"SELECT id_pago, monto, {COL_NOMBRE_PAGO} AS nombre FROM pagos "
-               "WHERE estado_pago = %s AND id_pago NOT IN (SELECT id_pago FROM pagos_pendientes)")
+               "WHERE estado_pago = %s AND id_pago NOT IN (SELECT id_pago FROM pagos_pendientes) "
+               "AND id_pago NOT IN (SELECT id_pago FROM pagos_rechazados)")
         filas = con_bd(lambda c: _fetch(c, sql, (ESTADO_PAGO_PENDIENTE,)))
         if progreso:
             filas = [f for f in filas if not progreso.esta_rechazado(f["id_pago"])]
         return filas
 
+
+     # ---------- recibos rechazados (para reportar anomalías) ----------
+    def asegurar_tabla_rechazados(self):
+        """Crea pagos_rechazados si no existe (una sola vez por ejecución)."""
+        if not self._tabla_rechazos:
+            con_bd(lambda c: c.execute(DDL_PAGOS_RECHAZADOS))
+            self._tabla_rechazos = True
+
+    def registrar_rechazo(self, id_pago, motivo, limite=5):
+        """
+        Guarda el recibo rechazado junto con los `limite` estudiantes más probables
+        (por fuzzy matching, SOLO entre quienes no estén ya vinculados a un recibo válido)
+        y lo saca de pagos_pendientes. Es idempotente: repetirlo no duplica el registro.
+        motivo: "MONTO" (monto incorrecto), "NC" o "NM" (rechazo manual).
+        """
+        self.asegurar_tabla_rechazados()
+        filas = con_bd(lambda c: _fetch(
+            c, f"SELECT no_recibo, {COL_NOMBRE_PAGO} AS nombre, monto FROM pagos WHERE id_pago = %s", (id_pago,)))
+        pago = filas[0] if filas else {}
+        candidatos = self.obtener_similares(pago.get("nombre") or "", limite=limite, umbral=0)
+        ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        def op(c):
+            c.execute("SELECT id_rechazo FROM pagos_rechazados WHERE id_pago = %s", (id_pago,))
+            if c.fetchone() is None:
+                c.execute("INSERT INTO pagos_rechazados "
+                          "(id_pago, no_recibo, nombre_pagador, monto, motivo, candidatos, fecha_rechazo) "
+                          "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                          (id_pago, pago.get("no_recibo"), pago.get("nombre"), pago.get("monto"), motivo,
+                           json.dumps(candidatos, ensure_ascii=False), ahora))
+            c.execute("DELETE FROM pagos_pendientes WHERE id_pago = %s", (id_pago,))
+
+        con_bd(op)
+        return {"id_pago": id_pago, "motivo": motivo, "candidatos": candidatos}
+
+    def listar_rechazados(self, motivo=None):
+        """
+        Recibos rechazados con sus candidatos ya convertidos a lista. Filtro opcional por motivo.
+        Los candidatos se calcularon al momento del rechazo; cada uno trae `ya_vinculado`=True
+        si DESPUÉS fue aceptado con otro recibo.
+        """
+        self.asegurar_tabla_rechazados()
+        sql = "SELECT * FROM pagos_rechazados" + (" WHERE motivo = %s" if motivo else "") + " ORDER BY id_rechazo"
+        filas = con_bd(lambda c: _fetch(c, sql, (motivo,) if motivo else ()))
+        aceptados = set(self.carnets_aceptados())
+        for f in filas:
+            try:
+                f["candidatos"] = json.loads(f["candidatos"])
+            except (TypeError, ValueError):
+                f["candidatos"] = []
+            for c in f["candidatos"]:
+                c["ya_vinculado"] = str(c["carnet"]) in aceptados
+        return filas
     # ---------- fuzzy ----------
     def obtener_similares(self, nombre, lista=None, limite=LIMITE_CANDIDATOS, umbral=UMBRAL_MIN):
         lista = self.obtener_pendientes() if lista is None else lista
@@ -430,9 +498,8 @@ class manualCheckout:
         salida = []
         for f in filas:
             if self.progreso.esta_rechazado(f["id_pago"]):
-                with contextlib.suppress(ConexionPerdida):   # limpieza de un corte previo
-                    con_bd(lambda c, i=f["id_pago"]: c.execute(
-                        "DELETE FROM pagos_pendientes WHERE id_pago = %s", (i,)))
+                with contextlib.suppress(ConexionPerdida):   # terminar un rechazo que se cortó a medias
+                    self.afnd.registrar_rechazo(f["id_pago"], self.progreso.datos["rechazados"][str(f["id_pago"])])
                 continue
             try:
                 rel = json.loads(f["relacionados"])
@@ -458,6 +525,7 @@ class manualCheckout:
         self.progreso.registrar(id_pago, "MANUAL_V", carnet, ["q6", "V", "q7"])
         self.progreso.guardar()
         return {"ok": True, "mensaje": f"Recibo #{id_pago} aceptado manualmente para el carnet {carnet}"}
+
  
     def rechazar(self, id_pago, motivo="NM"):
         """motivo: NC (no hay nombres relacionados) o NM (se rechazaron los sugeridos)."""
@@ -466,9 +534,15 @@ class manualCheckout:
         self.progreso.rechazar(id_pago, motivo)            # primero el progreso...
         self.progreso.registrar(id_pago, f"MANUAL_X_{motivo}", None, ["q6", "X", "qE"])
         self.progreso.guardar()
-        con_bd(lambda c: c.execute("DELETE FROM pagos_pendientes WHERE id_pago = %s", (id_pago,)))
+        r = self.afnd.registrar_rechazo(id_pago, motivo)   # ...y luego la BD (idempotente)
         causa = "sin nombres relacionados" if motivo == "NC" else "se rechazaron los nombres sugeridos"
-        return {"ok": True, "mensaje": f"Recibo #{id_pago} rechazado ({motivo}: {causa})"}
+        return {"ok": True, "candidatos": r["candidatos"],
+                "mensaje": f"Recibo #{id_pago} rechazado ({motivo}: {causa}). "
+                           f"Candidatos probables guardados: {len(r['candidatos'])}"}
+
+    def rechazados(self, motivo=None):
+        """Recibos rechazados con sus 5 candidatos probables, para reportar anomalías."""
+        return self.afnd.listar_rechazados(motivo)
  
     def resumen(self):
         pend = self.facturas_pendientes()
@@ -612,6 +686,7 @@ class qrDbMng:
             for f in facturas[:limite]:
                 r = self.afnd.procesar_factura(f)
                 if r["simbolo"] == "X":
+                    self.afnd.registrar_rechazo(f["id_pago"], "MONTO")
                     self.progreso.rechazar(f["id_pago"], "MONTO")
                 self.progreso.registrar(f["id_pago"], r["simbolo"], r["carnet"], r["traza"])
                 self.progreso.guardar()
@@ -805,7 +880,42 @@ class AFDValidador:
         return {"autorizado": autorizado, "mensaje": mensaje, "carnet": carnet,
                 "estado_final": self.afd.actual, "traza": self.afd.traza,
                 "entrada": "".join(self.afd.traza[1::2])}
- 
+
+    def estado_sesiones(self, cadena_qr=None, carnet=None, ahora=None):
+        """
+        Consulta (sin consumir nada ni mover el AFD) el estado de cada sesión de un QR.
+        Se identifica por el texto del QR o por el carnet. Devuelve:
+            {"existe": bool, "carnet": str|None,
+             "sesiones": {n: {"usada": bool|None, "horario": (inicio, fin)|None, "abierta_ahora": bool}},
+             "mensaje": str}
+        "usada" es None si esa sesión no existe en la tabla de QRs.
+        """
+        if (cadena_qr is None) == (carnet is None):
+            raise ValueError("indica solo uno: cadena_qr o carnet")
+        ahora = ahora or datetime.now()
+        try:
+            with contextlib.closing(sqlite3.connect(self.ruta_db)) as conn:
+                conn.row_factory = sqlite3.Row
+                if cadena_qr is not None:
+                    fila = conn.execute("SELECT * FROM qr_tickets WHERE codigo_hash = ?",
+                                        (self.hash_codigo(cadena_qr),)).fetchone()
+                else:
+                    fila = conn.execute("SELECT * FROM qr_tickets WHERE carnet = ?", (str(carnet),)).fetchone()
+                if not fila:
+                    return {"existe": False, "carnet": None, "sesiones": {}, "mensaje": "QR INEXISTENTE"}
+                sesiones = {}
+                for n in range(1, self.sesiones + 1):
+                    columna = f"estado{n}"
+                    usada = bool(fila[columna]) if columna in fila.keys() else None
+                    abierta, ventana = self._en_horario(conn, n, ahora)
+                    sesiones[n] = {"usada": usada, "horario": ventana, "abierta_ahora": abierta}
+                usadas = [n for n, d in sesiones.items() if d["usada"]]
+                return {"existe": True, "carnet": fila["carnet"], "sesiones": sesiones,
+                        "mensaje": f"Sesiones usadas: {usadas if usadas else 'ninguna'} de {self.sesiones}"}
+        except sqlite3.Error as e:
+            return {"existe": False, "carnet": None, "sesiones": {},
+                    "mensaje": f"BASE DE QRs NO DISPONIBLE: {e}"}
+    
     def validar(self, cadena_qr, sesion=1, ahora=None):
         """
         Devuelve {autorizado, mensaje, carnet, estado_final, traza, entrada}.
@@ -855,9 +965,13 @@ class AFDValidador:
 # ==========================================
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("accion", choices=["procesar", "revisar", "emitir", "estado"])
-    ap.add_argument("--sesiones", type=int, default=1)
+    ap.add_argument("accion", choices=["procesar", "revisar", "emitir", "estado", "validar"])
+    ap.add_argument("--qr", default="")
+    ap.add_argument("--sesion", type=int, default=1)
     a = ap.parse_args()
+    if a.accion == "validar":
+        print(AFDValidador(sesiones=a.sesiones).validar(a.qr, a.sesion))
+        raise SystemExit
     mng = qrDbMng(sesiones=a.sesiones)
     try:
         if a.accion == "procesar":
