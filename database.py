@@ -1,17 +1,19 @@
 from datetime import datetime
 import getpass
+import os
 import mysql.connector
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuración de conexión remota con Alwaysdata
 DB_CONFIG = {
-    'host': 'mysql-jack-vg.alwaysdata.net',
-    'user': 'jack-vg',
-    'password': 'Wilson2007..',  # se pone al contraseña de la base  de datos, ahi me preguntan la contra x,d
-    #no voy a subir eso a esata wea
-    'database': 'jack-vg_simposio_db',
-    'port': 3306
+    'host': os.getenv('DB_HOST', 'mysql-jack-vg.alwaysdata.net'),
+    'user': os.getenv('DB_USER', 'jack-vg'),
+    'password': os.getenv('DB_PASSWORD', ''),
+    'database': os.getenv('DB_NAME', 'jack-vg_simposio_db'),
+    'port': int(os.getenv('DB_PORT', '3306'))
 }
-
 #tablas de la base, aqui se inicializan, poque ya existen
 TABLAS = {
     'estudiantes': """

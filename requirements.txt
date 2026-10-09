@@ -1,0 +1,6 @@
+mysql-connector-python
+python-dotenv
+rapidfuzz
+qrcode[pil]
+reportlab
+requests

@@ -1,31 +1,20 @@
-import mysql.connector
+"""Compatibilidad con módulos antiguos: reutiliza la conexión central de database.py."""
+from database import DB_CONFIG, obtener_conexion
 
-# Credenciales de Alwaysdata
-DB_CONFIG = {
-    'host': 'mysql-jack-vg.alwaysdata.net',
-    'user': 'jack-vg',
-    'password': 'Wilson2007..',  # Reemplaza con tu contraseña
-    'database': 'jack-vg_simposio_db',
-    'port': 3306
-}
-
-def obtener_conexion():
-    """Establece conexión con la base de datos remota en Alwaysdata."""
-    return mysql.connector.connect(**DB_CONFIG)
-
-# Prueba de conexión
 if __name__ == "__main__":
+    conexion = None
     try:
         conexion = obtener_conexion()
-        if conexion.is_connected():
-            print("¡Conexión exitosa a Alwaysdata!")
-            cursor = conexion.cursor()
-            cursor.execute("SHOW TABLES;")
-            tablas = cursor.fetchall()
-            print("\nTablas encontradas en la nube:")
-            for t in tablas:
-                print(f"  - {t[0]}")
-            cursor.close()
+        print("Conexión exitosa a la base de datos.")
+        cursor = conexion.cursor()
+        cursor.execute("SHOW TABLES")
+        print("Tablas disponibles:")
+        for fila in cursor.fetchall():
+            print(" -", fila[0])
+        cursor.close()
+    except Exception as error:
+        print("No fue posible conectar. Revisa DB_HOST, DB_USER, DB_PASSWORD, DB_NAME y DB_PORT.")
+        print("Detalle:", error)
+    finally:
+        if conexion is not None and conexion.is_connected():
             conexion.close()
-    except Exception as e:
-        print("Error de conexión:", e)
